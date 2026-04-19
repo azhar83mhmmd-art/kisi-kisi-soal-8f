@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>KisiKisi 8F</title>
+  <meta name="theme-color" content="#060810">
+  <meta name="description" content="Platform kisi-kisi eksklusif Kelas 8F">
+  <!-- Preconnect untuk percepat font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <!-- Supabase dimuat duluan -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ═══════════════════════════════════ LOADING ═══════════ -->
+<div id="app-loading">
+  <div class="loading-inner">
+    <div class="loading-logo">K</div>
+    <div class="loading-bar"><div class="loading-bar-fill" id="load-bar"></div></div>
+    <div class="loading-text">Memuat aplikasi...</div>
+  </div>
+</div>
+
+<div class="noise"></div>
+<div class="bg-mesh"></div>
+<div id="toast-container"></div>
+
+<div class="app">
+
+<!-- ════════════════ LOGIN ════════════════ -->
+<div id="page-login" class="page">
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-mark">K</div>
+        <div>
+          <div class="brand-name">KisiKisi 8F</div>
+          <div class="brand-sub">Platform Eksklusif · Kelas 8F</div>
+        </div>
+      </div>
+      <div class="tab-row">
+        <button id="tab-masuk"  class="tab active" onclick="switchTab('login')">Masuk</button>
+        <button id="tab-daftar" class="tab"         onclick="switchTab('register')">Daftar</button>
+      </div>
+
+      <!-- LOGIN FORM -->
+      <form id="login-form" onsubmit="handleLogin(event)">
+        <div class="field"><label>Email</label><input type="email" id="login-email" placeholder="nama@email.com" autocomplete="email" required></div>
+        <div class="field"><label>Password</label><input type="password" id="login-password" placeholder="Password Anda" autocomplete="current-password" required></div>
+        <button type="submit" id="btn-login" class="btn btn-primary w-full mt-2">Masuk</button>
+      </form>
+
+      <!-- REGISTER FORM -->
+      <form id="register-form" onsubmit="handleRegister(event)" style="display:none">
+        <div class="field"><label>Nama Lengkap</label><input type="text" id="reg-nama" placeholder="Nama lengkap" autocomplete="name" required></div>
+        <div class="field"><label>Email</label><input type="email" id="reg-email" placeholder="nama@email.com" autocomplete="email" required></div>
+        <div class="field"><label>Password</label><input type="password" id="reg-password" placeholder="Min. 6 karakter" minlength="6" autocomplete="new-password" required></div>
+        <div class="role-label">Daftar Sebagai</div>
+        <div class="role-selector">
+          <button type="button" id="role-siswa" class="role-btn role-active siswa-active" onclick="setRole('siswa')">🎓 Siswa</button>
+          <button type="button" id="role-admin" class="role-btn" onclick="setRole('admin')">⭐ Admin</button>
+        </div>
+        <div id="secret-wrap" class="secret-field" style="display:none">
+          <div class="field"><label>🔑 Kode Rahasia Admin</label><input type="password" id="reg-secret" placeholder="Masukkan kode rahasia"></div>
+        </div>
+        <button type="submit" id="btn-register" class="btn btn-primary w-full mt-2">Daftar Sekarang</button>
+        <p class="hint">OTP dikirim ke email anda · Berlaku 5 menit</p>
+      </form>
+
+      <div class="divider"><span>atau</span></div>
+      <button class="btn btn-google w-full" onclick="loginWithGoogle()">
+        <svg width="18" height="18" viewBox="0 0 18 18">
+          <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+          <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z"/>
+          <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
+          <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/>
+        </svg>
+        Masuk dengan Google
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════ OTP ════════════════ -->
+<div id="page-otp" class="page">
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-mark" style="background:var(--amber)">🔐</div>
+        <div>
+          <div class="brand-name">Verifikasi OTP</div>
+          <div class="brand-sub">OTP Sudah di kirim ke email anda <span id="otp-email-display" style="color:var(--blue)"></span> · <span id="otp-role-info" style="color:var(--amber);font-weight:700"></span></div>
+        </div>
+      </div>
+      <p class="hint" style="margin-bottom:16px;text-align:center">Masukkan <strong>8 digit kode OTP</strong> dari email Anda.</p>
+      <div class="otp-row">
+        <input class="otp-box" id="otp-0" maxlength="1" inputmode="numeric" oninput="otpInput(event,0)" onkeydown="otpKey(event,0)">
+        <input class="otp-box" id="otp-1" maxlength="1" inputmode="numeric" oninput="otpInput(event,1)" onkeydown="otpKey(event,1)">
+        <input class="otp-box" id="otp-2" maxlength="1" inputmode="numeric" oninput="otpInput(event,2)" onkeydown="otpKey(event,2)">
+        <input class="otp-box" id="otp-3" maxlength="1" inputmode="numeric" oninput="otpInput(event,3)" onkeydown="otpKey(event,3)">
+        <input class="otp-box" id="otp-4" maxlength="1" inputmode="numeric" oninput="otpInput(event,4)" onkeydown="otpKey(event,4)">
+        <input class="otp-box" id="otp-5" maxlength="1" inputmode="numeric" oninput="otpInput(event,5)" onkeydown="otpKey(event,5)">
+        <input class="otp-box" id="otp-6" maxlength="1" inputmode="numeric" oninput="otpInput(event,6)" onkeydown="otpKey(event,6)">
+        <input class="otp-box" id="otp-7" maxlength="1" inputmode="numeric" oninput="otpInput(event,7)" onkeydown="otpKey(event,7)">
+      </div>
+      <div class="otp-meta">Berlaku: <span id="otp-countdown" class="otp-timer">5:00</span></div>
+      <button id="btn-verify-otp" class="btn btn-primary w-full" onclick="submitOTP()">Verifikasi</button>
+      <button class="btn btn-ghost w-full mt-1" onclick="handleResendOTP()">Kirim Ulang OTP</button>
+      <p class="hint" style="text-align:center;margin-top:12px"><span class="link" onclick="showPage('page-login')">← Kembali ke Login</span></p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════ PENDING ════════════════ -->
+<div id="page-pending" class="page">
+  <div class="center-page">
+    <div class="status-card">
+      <div class="status-icon">⏳</div>
+      <h2>Menunggu Persetujuan</h2>
+      <p>Akun Anda sedang diverifikasi admin. Harap bersabar ya!</p>
+      <div class="info-box">Anda belum bisa mengakses kisi-kisi sampai admin menyetujui akun Anda.</div>
+      <button class="btn btn-primary w-full" onclick="checkStatus()">🔄 Cek Status</button>
+      <button class="btn btn-ghost w-full mt-1" onclick="logoutUser()">Keluar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════ REJECTED ════════════════ -->
+<div id="page-rejected" class="page">
+  <div class="center-page">
+    <div class="status-card">
+      <div class="status-icon" style="color:var(--red)">✕</div>
+      <h2 style="color:var(--red)">Akses Ditolak</h2>
+      <p>Pendaftaran Anda ditolak. Hubungi admin untuk info lebih lanjut.</p>
+      <button class="btn btn-ghost w-full" onclick="logoutUser()">Kembali ke Login</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════ DASHBOARD ════════════════ -->
+<div id="page-dashboard" class="page">
+  <nav class="nav">
+    <div class="nav-brand"><span class="brand-mark sm">K</span> KisiKisi 8F</div>
+    <div class="nav-user" onclick="logoutUser()">
+      <div class="avatar" id="dash-avatar">?</div>
+      <span id="dash-name" class="nav-username">—</span>
+      <span class="nav-exit">↗</span>
+    </div>
+  </nav>
+  <div class="content">
+    <div class="page-header">
+      <div class="eyebrow" id="dash-greeting">Selamat Datang</div>
+      <h1 class="page-title">Pilih Mata Pelajaran</h1>
+      <p class="page-desc">Kisi-kisi ulangan eksklusif kelas 8F</p>
+    </div>
+    <div class="stats-row">
+      <div class="stat"><div class="stat-label">Total Mapel</div><div class="stat-val" id="stat-total">—</div></div>
+      <div class="stat"><div class="stat-label">Tersedia</div><div class="stat-val green" id="stat-avail">—</div></div>
+      <div class="stat"><div class="stat-label">Kelas</div><div class="stat-val blue">8F</div></div>
+    </div>
+    <div class="section-head">
+      <span class="section-title">Mata Pelajaran</span>
+      <span class="live-dot">Live</span>
+    </div>
+    <div class="mapel-grid" id="mapel-grid"></div>
+  </div>
+</div>
+
+<!-- ════════════════ KISI-KISI PAGE ════════════════ -->
+<div id="page-kisi" class="page">
+  <nav class="nav">
+    <div class="nav-brand"><span class="brand-mark sm">K</span> KisiKisi 8F</div>
+    <div class="nav-user" onclick="goBack()"><span class="nav-exit">←</span> <span class="nav-username">Kembali</span></div>
+  </nav>
+  <div class="kisi-hero" id="kisi-hero"></div>
+
+  <!-- TAB BAR -->
+  <div class="kisi-tab-bar" id="kisi-tab-bar" style="display:none">
+    <button class="kisi-tab active" id="ktab-materi" onclick="switchKisiTab('materi')">📖 Materi & Kisi-kisi</button>
+    <button class="kisi-tab" id="ktab-questions" onclick="switchKisiTab('questions')">❓ Soal Latihan</button>
+  </div>
+
+  <div class="content" id="kisi-list"></div>
+</div>
+
+<!-- ════════════════ ADMIN ════════════════ -->
+<div id="page-admin" class="page">
+  <nav class="nav">
+    <div class="nav-brand"><span class="brand-mark sm" style="background:var(--amber)">★</span> <span class="nav-username">Admin Panel</span></div>
+    <div class="nav-right">
+      <span class="live-dot">Realtime</span>
+      <div class="nav-user" onclick="logoutUser()">
+        <div class="avatar" id="admin-avatar">A</div>
+        <span id="admin-name" class="nav-username">Admin</span>
+        <span class="nav-exit">↗</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Mobile tab bar -->
+  <div class="admin-tabs">
+    <button class="admin-tab active" id="nav-users"     onclick="adminSection('users')">👥 User</button>
+    <button class="admin-tab"        id="nav-mapel"     onclick="adminSection('mapel')">📚 Mapel</button>
+    <button class="admin-tab"        id="nav-soal"      onclick="adminSection('soal')">📝 Soal</button>
+    <button class="admin-tab"        id="nav-broadcast" onclick="adminSection('broadcast')">📢 Broadcast</button>
+    <button class="admin-tab"        id="nav-stats"     onclick="adminSection('stats')">📊 Statistik</button>
+  </div>
+
+  <div class="admin-layout">
+    <aside class="sidebar">
+      <div class="sidebar-label">Menu</div>
+      <div class="sidebar-item active" id="snav-users"     onclick="adminSection('users')">👥 Pengguna</div>
+      <div class="sidebar-item"        id="snav-mapel"     onclick="adminSection('mapel')">📚 Mapel</div>
+      <div class="sidebar-item"        id="snav-soal"      onclick="adminSection('soal')">📝 Soal</div>
+      <div class="sidebar-item"        id="snav-broadcast" onclick="adminSection('broadcast')">📢 Broadcast</div>
+      <div class="sidebar-item"        id="snav-stats"     onclick="adminSection('stats')">📊 Statistik</div>
+    </aside>
+
+    <main class="admin-main">
+
+      <!-- USERS -->
+      <div class="admin-sec" id="admin-users">
+        <h2 class="sec-title">Manajemen Pengguna</h2>
+        <div class="stats-row">
+          <div class="stat"><div class="stat-label">Total</div><div class="stat-val" id="a-total">0</div></div>
+          <div class="stat"><div class="stat-label">Pending</div><div class="stat-val amber" id="a-pending">0</div></div>
+          <div class="stat"><div class="stat-label">Approved</div><div class="stat-val green" id="a-approved">0</div></div>
+          <div class="stat"><div class="stat-label">Rejected</div><div class="stat-val red" id="a-rejected">0</div></div>
+        </div>
+        <div class="search-box">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" placeholder="Cari nama, email, status..." oninput="searchUsers(this.value)">
+        </div>
+        <div class="table-wrap">
+          <table id="users-table">
+            <thead><tr><th>Pengguna</th><th>Kelas</th><th>Role</th><th>Status</th><th class="hide-sm">Bergabung</th><th>Aksi</th></tr></thead>
+            <tbody id="users-tbody"><tr><td colspan="6" class="td-empty">Memuat data...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- MAPEL -->
+      <div class="admin-sec" id="admin-mapel" style="display:none">
+        <div class="sec-header-row">
+          <div>
+            <h2 class="sec-title">Manajemen Mapel</h2>
+            <p class="sec-desc">Tambah, edit, atau hapus mata pelajaran. Toggle untuk kunci/buka.</p>
+          </div>
+          <button class="btn btn-primary" onclick="openAddMapel()">＋ Tambah Mapel</button>
+        </div>
+        <div class="mapel-grid" id="admin-mapel-grid"></div>
+      </div>
+
+      <!-- SOAL -->
+      <div class="admin-sec" id="admin-soal" style="display:none">
+        <div class="sec-header-row">
+          <div>
+            <h2 class="sec-title">Manajemen Soal</h2>
+            <p class="sec-desc">Kelola kisi-kisi materi dan soal latihan interaktif.</p>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost" onclick="openAddKisi()">＋ Kisi-kisi</button>
+            <button class="btn btn-primary" onclick="openAddQuestion()">＋ Soal</button>
+          </div>
+        </div>
+        <div class="field" style="margin-bottom:16px">
+          <label>Pilih Mata Pelajaran</label>
+          <select id="soal-mapel-select" onchange="onSoalMapelChange()"><option value="">-- Pilih --</option></select>
+        </div>
+
+        <!-- Tab kisi vs questions -->
+        <div class="soal-tab-bar">
+          <button class="soal-tab active" id="stab-kisi"      onclick="switchSoalAdminTab('kisi')">📖 Kisi-kisi / Materi</button>
+          <button class="soal-tab"        id="stab-questions" onclick="switchSoalAdminTab('questions')">❓ Soal Latihan (MCQ)</button>
+        </div>
+
+        <div id="kisi-admin-section">
+          <div id="kisi-admin-list"><div class="empty-hint">Pilih mata pelajaran di atas.</div></div>
+        </div>
+        <div id="questions-admin-section" style="display:none">
+          <div id="questions-admin-list"><div class="empty-hint">Pilih mata pelajaran di atas.</div></div>
+        </div>
+      </div>
+
+      <!-- BROADCAST -->
+      <div class="admin-sec" id="admin-broadcast" style="display:none">
+        <h2 class="sec-title">📢 Broadcast Pengumuman</h2>
+        <p class="sec-desc">Kirim pesan yang langsung muncul sebagai pop-up ke semua siswa yang sedang online.</p>
+        <div class="bcast-form-card">
+          <div class="field"><label>Judul Pengumuman</label><input type="text" id="bcast-title" placeholder="Contoh: Ulangan Besok Ditunda" maxlength="80"></div>
+          <div class="field">
+            <label>Pesan *</label>
+            <textarea id="bcast-message" rows="4" placeholder="Tulis pesan yang akan ditampilkan kepada semua siswa..."></textarea>
+          </div>
+          <div class="field">
+            <label>Foto (opsional, max 3 MB)</label>
+            <label class="bcast-file-label" for="bcast-image">
+              <span id="bcast-file-text">📎 Pilih foto...</span>
+              <input type="file" id="bcast-image" accept="image/*" style="display:none" onchange="previewBcastImage(this)">
+            </label>
+            <div id="bcast-img-preview-wrap"></div>
+          </div>
+          <div class="bcast-note">⚡ Pesan ini langsung muncul sebagai pop-up pada semua siswa yang sedang online.</div>
+          <button class="btn btn-primary" id="btn-send-bcast" onclick="handleSendBroadcast()" style="width:100%">📢 Kirim Sekarang</button>
+        </div>
+        <h3 style="font-size:14px;font-weight:700;margin:24px 0 12px">Riwayat Broadcast</h3>
+        <div id="broadcast-history"></div>
+      </div>
+
+      <!-- STATS -->
+      <div class="admin-sec" id="admin-stats" style="display:none">
+        <h2 class="sec-title">Statistik</h2>
+        <div class="stats-row">
+          <div class="stat"><div class="stat-label">Daftar Hari Ini</div><div class="stat-val" id="stat-today">—</div></div>
+          <div class="stat"><div class="stat-label">Kelas Aktif</div><div class="stat-val blue">8F</div></div>
+        </div>
+        <div class="empty-box">📈 Grafik analitik akan hadir segera.</div>
+      </div>
+
+    </main>
+  </div>
+</div><!-- end .app -->
+
+</div>
+
+<!-- ═════════════════════ MODALS ═════════════════════ -->
+
+<!-- DISCLAIMER -->
+<div class="modal-bg" id="modal-disclaimer">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-disclaimer')">✕</button>
+    <span class="modal-icon" id="disc-icon">📚</span>
+    <h3 class="modal-title">Disclaimer — <span id="disc-name"></span></h3>
+    <p class="modal-body">Materi ini disusun khusus untuk siswa kelas <strong>8F</strong> sebagai bahan belajar. Bersifat <strong>rahasia dan eksklusif</strong>.</p>
+    <div class="modal-warn">⚠️ Dilarang menyebarkan konten ini kepada pihak luar.</div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-disclaimer')">Batal</button>
+      <button class="btn btn-primary" id="btn-disc-ok">Saya Mengerti</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAPEL -->
+<div class="modal-bg" id="modal-mapel">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-mapel')">✕</button>
+    <h3 class="modal-title" id="mapel-modal-title">Tambah Mata Pelajaran</h3>
+    <div class="field"><label>Nama Mata Pelajaran</label><input type="text" id="mapel-form-nama" placeholder="Contoh: Matematika"></div>
+    <div class="field"><label>Icon (emoji)</label><input type="text" id="mapel-form-icon" placeholder="📚" maxlength="4"></div>
+    <div class="form-row-2">
+      <div class="field"><label>Warna Mulai</label><input type="color" id="mapel-form-from" value="#4f8ef7"></div>
+      <div class="field"><label>Warna Akhir</label><input type="color" id="mapel-form-to" value="#9b7ef8"></div>
+    </div>
+    <div class="field"><label>Urutan</label><input type="number" id="mapel-form-urutan" placeholder="0" min="0"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-mapel')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-mapel" onclick="saveMapel()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- KISI-KISI -->
+<div class="modal-bg" id="modal-kisi">
+  <div class="modal modal-lg">
+    <button class="modal-close" onclick="closeModal('modal-kisi')">✕</button>
+    <h3 class="modal-title" id="kisi-modal-title">Tambah Kisi-kisi</h3>
+    <div class="field"><label>Judul</label><input type="text" id="kisi-form-judul" placeholder="Judul materi atau soal"></div>
+    <div class="form-row-2">
+      <div class="field">
+        <label>Tipe</label>
+        <select id="kisi-form-tipe">
+          <option value="materi">📖 Materi</option>
+          <option value="soal">❓ Soal</option>
+          <option value="catatan">📌 Catatan</option>
+        </select>
+      </div>
+      <div class="field"><label>Urutan</label><input type="number" id="kisi-form-urutan" placeholder="0" min="0"></div>
+    </div>
+    <div class="field">
+      <label>Konten (Markdown)</label>
+      <textarea id="kisi-form-konten" placeholder="Tulis konten di sini...&#10;&#10;Gunakan **bold**, *italic*, ## Judul, - list, > blockquote, dll." rows="10"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-kisi')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-kisi" onclick="saveKisi()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- SOAL (MCQ/Multiple/Essay) -->
+<div class="modal-bg" id="modal-soal">
+  <div class="modal modal-lg">
+    <button class="modal-close" onclick="closeModal('modal-soal')">✕</button>
+    <h3 class="modal-title" id="soal-modal-title">Tambah Soal</h3>
+
+    <!-- Tipe soal -->
+    <div style="margin-bottom:18px">
+      <div class="field-label">Tipe Soal</div>
+      <div class="type-selector">
+        <button class="type-btn active" id="stype-mcq"      onclick="setSoalType('mcq')">🔵 Pilihan Ganda</button>
+        <button class="type-btn"        id="stype-multiple" onclick="setSoalType('multiple')">☑️ Pilihan Kompleks</button>
+        <button class="type-btn"        id="stype-essay"    onclick="setSoalType('essay')">✏️ Isian/Essay</button>
+      </div>
+    </div>
+
+    <div class="field"><label>Teks Soal *</label><textarea id="soal-form-text" rows="3" placeholder="Tulis pertanyaan di sini..."></textarea></div>
+
+    <!-- Pilihan jawaban -->
+    <div id="soal-options-section">
+      <div class="field-label" id="soal-options-label">Pilihan Jawaban * (centang 1 benar)</div>
+      <div id="soal-options-list"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="addSoalOpt()">＋ Tambah Pilihan</button>
+    </div>
+
+    <div class="field" style="margin-top:14px">
+      <label id="soal-exp-label">Pembahasan (Opsional)</label>
+      <textarea id="soal-form-exp" rows="2" placeholder="Penjelasan jawaban benar..."></textarea>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-soal')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-soal" onclick="saveSoal()">Simpan Soal</button>
+    </div>
+  </div>
+</div>
+
+<script src="supabase.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
