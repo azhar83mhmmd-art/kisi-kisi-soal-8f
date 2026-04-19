@@ -67,12 +67,12 @@
         <div id="secret-wrap" class="secret-field" style="display:none">
           <div class="field"><label>🔑 Kode Rahasia Admin</label><input type="password" id="reg-secret" placeholder="Masukkan kode rahasia"></div>
         </div>
-        <button type="submit" id="btn-register" class="btn btn-primary w-full mt-2">Daftar Sekarang</button>
-        <p class="hint">OTP dikirim ke email anda · Berlaku 5 menit</p>
+        <button type="submit" id="btn-register" class="btn btn-primary w-full mt-2">Kirim OTP</button>
+        <p class="hint">OTP dikirim ke email · Berlaku 5 menit</p>
       </form>
 
       <div class="divider"><span>atau</span></div>
-      <button class="btn btn-google w-full" onclick="loginWithGoogle()">
+      <button class="btn btn-google w-full" id="btn-google" onclick="handleGoogleLogin()">
         <svg width="18" height="18" viewBox="0 0 18 18">
           <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
           <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z"/>
@@ -93,7 +93,7 @@
         <div class="brand-mark" style="background:var(--amber)">🔐</div>
         <div>
           <div class="brand-name">Verifikasi OTP</div>
-          <div class="brand-sub">OTP Sudah di kirim ke email anda <span id="otp-email-display" style="color:var(--blue)"></span> · <span id="otp-role-info" style="color:var(--amber);font-weight:700"></span></div>
+          <div class="brand-sub">Dikirim ke <span id="otp-email-display" style="color:var(--blue)"></span> · <span id="otp-role-info" style="color:var(--amber);font-weight:700"></span></div>
         </div>
       </div>
       <p class="hint" style="margin-bottom:16px;text-align:center">Masukkan <strong>8 digit kode OTP</strong> dari email Anda.</p>
@@ -102,6 +102,7 @@
         <input class="otp-box" id="otp-1" maxlength="1" inputmode="numeric" oninput="otpInput(event,1)" onkeydown="otpKey(event,1)">
         <input class="otp-box" id="otp-2" maxlength="1" inputmode="numeric" oninput="otpInput(event,2)" onkeydown="otpKey(event,2)">
         <input class="otp-box" id="otp-3" maxlength="1" inputmode="numeric" oninput="otpInput(event,3)" onkeydown="otpKey(event,3)">
+        <div class="otp-sep">—</div>
         <input class="otp-box" id="otp-4" maxlength="1" inputmode="numeric" oninput="otpInput(event,4)" onkeydown="otpKey(event,4)">
         <input class="otp-box" id="otp-5" maxlength="1" inputmode="numeric" oninput="otpInput(event,5)" onkeydown="otpKey(event,5)">
         <input class="otp-box" id="otp-6" maxlength="1" inputmode="numeric" oninput="otpInput(event,6)" onkeydown="otpKey(event,6)">
@@ -121,9 +122,16 @@
     <div class="status-card">
       <div class="status-icon">⏳</div>
       <h2>Menunggu Persetujuan</h2>
-      <p>Akun Anda sedang diverifikasi admin. Harap bersabar ya!</p>
-      <div class="info-box">Anda belum bisa mengakses kisi-kisi sampai admin menyetujui akun Anda.</div>
-      <button class="btn btn-primary w-full" onclick="checkStatus()">🔄 Cek Status</button>
+      <p>Halo <strong id="pending-name">—</strong>! Akun Anda sedang diverifikasi oleh admin.</p>
+      <div class="info-box" style="margin:16px 0">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Akun terdaftar sebagai</div>
+        <div style="font-weight:700;font-size:14px" id="pending-email">—</div>
+      </div>
+      <div class="info-box" style="background:rgba(79,142,247,.07);border-color:rgba(79,142,247,.2);display:flex;align-items:center;gap:10px;margin-bottom:20px">
+        <span style="font-size:20px">🔔</span>
+        <div style="font-size:12px;line-height:1.6;color:var(--muted)">Halaman ini akan <strong style="color:var(--blue)">otomatis berpindah</strong> saat admin menyetujui akun Anda. Tidak perlu refresh!</div>
+      </div>
+      <button class="btn btn-primary w-full" onclick="checkStatus()">🔄 Cek Status Manual</button>
       <button class="btn btn-ghost w-full mt-1" onclick="logoutUser()">Keluar</button>
     </div>
   </div>
@@ -134,9 +142,9 @@
   <div class="center-page">
     <div class="status-card">
       <div class="status-icon" style="color:var(--red)">✕</div>
-      <h2 style="color:var(--red)">Akses Ditolak</h2>
-      <p>Pendaftaran Anda ditolak. Hubungi admin untuk info lebih lanjut.</p>
-      <button class="btn btn-ghost w-full" onclick="logoutUser()">Kembali ke Login</button>
+      <h2 style="color:var(--red)">Akun Tidak Ditemukan</h2>
+      <p>Akun Anda telah dihapus atau tidak terdaftar. Silakan daftar ulang atau hubungi admin.</p>
+      <button class="btn btn-primary w-full" onclick="logoutUser()">Daftar / Login Ulang</button>
     </div>
   </div>
 </div>

@@ -243,32 +243,80 @@ async function resendOTPCode() {
 // ════════════════════════════════════════════════════════════
 
 async function loginUser(email, password) {
-  const { data, error } = await sb.auth.signInWithPassword({ email, password });
-  if (error) {
-    const msg = error.message.includes('Invalid') ? 'Email atau password salah.'
-      : error.message.includes('confirm') ? 'Email belum dikonfirmasi.'
-      : error.message.includes('Too many') ? 'Terlalu banyak percobaan. Tunggu beberapa menit.'
-      : 'Login gagal: ' + error.message;
+  try {
+    const { data, error } = await withTimeout(
+      sb.auth.signInWithPassword({ email, password }),
+      10000, 'loginUser'
+    );
+    if (error) {
+      const m = error.message || '';
+      const msg = m.includes('Invalid login') || m.includes('invalid_credentials')
+        ? 'Email atau password salah.'
+        : m.includes('confirm') ? 'Email belum dikonfirmasi.'
+        : m.includes('Too many') || m.includes('rate') ? 'Terlalu banyak percobaan. Tunggu beberapa menit.'
+        : m.includes('fetch') || m.includes('network') || m.includes('Failed') ? 'Koneksi gagal. Periksa internet Anda.'
+        : 'Login gagal: ' + m;
+      return { success: false, error: msg };
+    }
+    // Fetch profile — dengan retry 1x jika gagal
+    let profile = await getProfile(data.user.id);
+    if (!profile) {
+      await new Promise(r => setTimeout(r, 800));
+      profile = await getProfile(data.user.id);
+    }
+    if (!profile) {
+      // Jangan signOut — session tetap ada, mungkin profil belum dibuat
+      profile = await ensureProfile(data.user);
+    }
+    if (!profile) {
+      await sb.auth.signOut();
+      return { success: false, error: 'Profil tidak ditemukan. Hubungi admin.' };
+    }
+    return { success: true, user: data.user, profile };
+  } catch (e) {
+    const msg = e.message?.includes('TIMEOUT') ? 'Koneksi timeout. Periksa internet Anda.'
+      : 'Koneksi gagal. Periksa internet Anda.';
     return { success: false, error: msg };
   }
-
-  // Fetch profile dengan timeout — jangan biarkan login hang
-  const profile = await getProfile(data.user.id);
-  if (!profile) {
-    await sb.auth.signOut();
-    return { success: false, error: 'Profil tidak ditemukan. Hubungi admin.' };
-  }
-  return { success: true, user: data.user, profile };
 }
 
 async function loginWithGoogle() {
-  const { error } = await sb.auth.signInWithOAuth({
-    provider: 'google', options: { redirectTo: window.location.origin }
-  });
-  if (error) showToast('Error', error.message, 'error');
+  try {
+    const { error } = await sb.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.href.split('?')[0].split('#')[0],
+        queryParams: { prompt: 'select_account' }
+      }
+    });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: 'Gagal login Google: ' + e.message };
+  }
+}
+
+// Hapus profil user (jika rejected, admin bisa bersihkan)
+// Catatan: menghapus dari auth.users memerlukan service_role key (tidak bisa dari client).
+// Solusi: hapus profil saja dari tabel profiles → user tidak bisa login lagi.
+async function deleteUserProfile(profileId) {
+  try {
+    const { error } = await withTimeout(
+      sb.from('profiles').delete().eq('id', profileId),
+      5000, 'deleteUserProfile'
+    );
+    if (!error) cacheDel('profile:');
+    return { success: !error, error: error?.message };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 }
 
 async function logoutUser() {
+  if (typeof _pendingChannel !== 'undefined' && _pendingChannel) {
+    try { _pendingChannel.unsubscribe(); } catch(_) {}
+    _pendingChannel = null;
+  }
   await rtUnsubscribeAll();
   await sb.auth.signOut();
   cacheClear();

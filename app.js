@@ -251,10 +251,39 @@ function routeProfile(p) {
     showToast('Halo!', `Selamat datang, ${p.nama_lengkap} 👋`, 'success');
     initDashboard(); showPage('page-dashboard');
   } else if (p.status === 'pending') {
+    // Tampilkan nama di halaman pending
+    const nameEl = q('pending-name');
+    if (nameEl) nameEl.textContent = p.nama_lengkap;
+    const emailEl = q('pending-email');
+    if (emailEl) emailEl.textContent = p.email;
     showPage('page-pending');
+    // Realtime: otomatis redirect saat admin approve/reject
+    startPendingListener(p.user_id);
   } else {
     showPage('page-rejected');
   }
+}
+
+let _pendingChannel = null;
+function startPendingListener(userId) {
+  if (_pendingChannel) { try { _pendingChannel.unsubscribe(); } catch(_){} }
+  _pendingChannel = sb.channel('pending-status-' + userId)
+    .on('postgres_changes', {
+      event: 'UPDATE', schema: 'public', table: 'profiles',
+      filter: `user_id=eq.${userId}`
+    }, async payload => {
+      const status = payload.new?.status;
+      if (status === 'approved') {
+        if (_pendingChannel) { _pendingChannel.unsubscribe(); _pendingChannel = null; }
+        currentProfile = payload.new;
+        showToast('Disetujui! 🎉', 'Akun Anda telah disetujui admin.', 'success');
+        initDashboard(); showPage('page-dashboard');
+      } else if (status === 'rejected') {
+        if (_pendingChannel) { _pendingChannel.unsubscribe(); _pendingChannel = null; }
+        showPage('page-rejected');
+      }
+    })
+    .subscribe();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -287,6 +316,7 @@ async function handleLogin(e) {
   const btn   = q('btn-login');
   const email = q('login-email').value.trim();
   const pw    = q('login-password').value;
+  if (!email || !pw) { showToast('Error', 'Email dan password wajib diisi.', 'error'); return; }
 
   setLoading(btn, true);
   const res = await loginUser(email, pw);
@@ -297,6 +327,17 @@ async function handleLogin(e) {
   currentUser = res.user; currentProfile = res.profile;
   showAppLoading('Memuat...');
   routeProfile(res.profile);
+}
+
+async function handleGoogleLogin() {
+  const btn = q('btn-google');
+  if (btn) btn.disabled = true;
+  const res = await loginWithGoogle();
+  if (!res.success) {
+    if (btn) btn.disabled = false;
+    showToast('Error', res.error || 'Gagal login Google.', 'error');
+  }
+  // Jika sukses → halaman akan redirect, tidak perlu action lain
 }
 
 async function handleRegister(e) {
@@ -688,31 +729,40 @@ async function loadUsers() {
 function renderUsersTable(data) {
   const tbody = q('users-tbody'); if (!tbody) return;
   if (!data.length) { tbody.innerHTML = `<tr><td colspan="6" class="td-empty">Belum ada pengguna.</td></tr>`; return; }
-  tbody.innerHTML = data.map(u => `
-    <tr>
+  tbody.innerHTML = data.map(u => {
+    const isAdmin = u.role === 'admin';
+    const actions = isAdmin ? `<span style="color:var(--dim)">—</span>` : `<div class="acts">
+      ${u.status !== 'approved' ? `<button class="btn btn-success btn-sm" title="Setujui" onclick="setStatus('${u.id}','approved','${esc(u.nama_lengkap)}')">✓ Setujui</button>` : ''}
+      ${u.status !== 'pending'  ? `<button class="btn btn-ghost btn-sm" title="Pending" onclick="setStatus('${u.id}','pending','${esc(u.nama_lengkap)}')">⏳</button>` : ''}
+      <button class="btn btn-danger btn-sm" title="Tolak & Hapus" onclick="setStatus('${u.id}','rejected','${esc(u.nama_lengkap)}')">✕ Tolak</button>
+    </div>`;
+    return `<tr>
       <td><div class="u-cell">
         <div class="avatar" style="width:32px;height:32px;font-size:11px">${u.nama_lengkap.charAt(0).toUpperCase()}</div>
         <div><div class="u-name">${esc(u.nama_lengkap)}</div><div class="u-email">${esc(u.email)}</div></div>
       </div></td>
       <td>${esc(u.kelas)}</td>
-      <td><span class="badge ${u.role==='admin'?'b-admin':'b-siswa'}">${u.role}</span></td>
+      <td><span class="badge ${isAdmin ? 'b-admin' : 'b-siswa'}">${u.role}</span></td>
       <td><span class="badge b-${u.status}">${u.status}</span></td>
       <td class="td-date hide-sm">${fmtDate(u.created_at)}</td>
-      <td>${u.role!=='admin'?`<div class="acts">
-        ${u.status!=='approved'?`<button class="btn btn-success btn-sm" title="Approve" onclick="setStatus('${u.id}','approved','${esc(u.nama_lengkap)}')">✓</button>`:''}
-        ${u.status!=='rejected'?`<button class="btn btn-danger btn-sm" title="Reject" onclick="setStatus('${u.id}','rejected','${esc(u.nama_lengkap)}')">✕</button>`:''}
-        ${u.status!=='pending'?`<button class="btn btn-ghost btn-sm" title="Pending" onclick="setStatus('${u.id}','pending','${esc(u.nama_lengkap)}')">⏳</button>`:''}
-      </div>`:'<span style="color:var(--dim)">—</span>'}</td>
-    </tr>`).join('');
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
 }
 
 async function setStatus(id, status, nama) {
-  if (status==='rejected' && !confirm(`Reject akun ${nama}?`)) return;
+  if (status === 'rejected') {
+    if (!confirm(`Tolak & hapus akun "${nama}"?\n\nAkun yang ditolak akan dihapus permanen.`)) return;
+    const res = await deleteUserProfile(id);
+    if (res.success) { showToast('Dihapus', `Akun ${nama} dihapus.`, 'warning'); loadUsers(); loadAdminStats(); }
+    else showToast('Error', res.error, 'error');
+    return;
+  }
   const res = await updateUserStatus(id, status);
-  const labels = { approved:'Diapprove ✅', rejected:'Direject', pending:'Dikembalikan ke pending' };
-  const types  = { approved:'success', rejected:'warning', pending:'info' };
-  if (res.success) { showToast('Berhasil',`${nama} — ${labels[status]}`,types[status]); loadUsers(); loadAdminStats(); }
-  else showToast('Error',res.error,'error');
+  const labels = { approved: 'Disetujui ✅', pending: 'Ke Pending' };
+  const types  = { approved: 'success', pending: 'info' };
+  if (res.success) { showToast('Berhasil', `${nama} — ${labels[status]}`, types[status]); loadUsers(); loadAdminStats(); }
+  else showToast('Error', res.error, 'error');
 }
 
 function searchUsers(val) {
