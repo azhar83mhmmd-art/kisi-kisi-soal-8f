@@ -49,8 +49,9 @@ function showAppLoading(msg = 'Memuat...') {
   const spinner = el.querySelector('.loading-bar'); if (spinner) spinner.style.display = '';
 }
 
-// ROOT CAUSE FIX #5 — showLoadingError: loading screen berubah jadi error UI
-// Ini mencegah "infinite white screen" — user tahu apa yang terjadi
+// showLoadingError — loading screen jadi error UI yang berguna
+// Tombol "Coba Lagi" → jalankan ulang onRetry (fetch nyata)
+// Tombol "Keluar & Login Ulang" → clear session + redirect login
 function showLoadingError(msg, onRetry) {
   const el = q('app-loading');
   if (!el) { hideAppLoading(); return; }
@@ -69,17 +70,22 @@ function showLoadingError(msg, onRetry) {
     el.querySelector('.loading-inner').appendChild(errBox);
   }
   errBox.style.display = 'flex';
+  // Ganti \n dengan <br> untuk tampilan multi-baris
+  const msgHtml = esc(msg).replace(/\\n|\n/g, '<br>');
   errBox.innerHTML = `
     <div style="font-size:36px">⚠️</div>
-    <div style="font-size:13px;color:var(--muted);line-height:1.6;max-width:280px">${esc(msg)}</div>
-    <button onclick="(${onRetry.toString()})()" 
-      style="padding:10px 24px;background:linear-gradient(135deg,#4f8ef7,#3a6fd8);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;">
+    <div style="font-size:13px;color:var(--muted);line-height:1.7;max-width:280px">${msgHtml}</div>
+    <button id="btn-retry-load"
+      style="padding:10px 24px;background:linear-gradient(135deg,#4f8ef7,#3a6fd8);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;">
       🔄 Coba Lagi
     </button>
     <button onclick="forceLogout()" 
       style="padding:8px 20px;background:rgba(255,255,255,.06);color:var(--muted);border:1px solid rgba(255,255,255,.1);border-radius:10px;font-size:13px;cursor:pointer;">
       Keluar & Login Ulang
     </button>`;
+  // Pasang event listener (bukan inline onclick dengan toString agar aman)
+  const retryBtn = document.getElementById('btn-retry-load');
+  if (retryBtn && onRetry) retryBtn.addEventListener('click', onRetry);
 }
 
 function hideAppLoading() {
@@ -143,54 +149,82 @@ function md(text) {
 //  AUTH CORE — FIX UTAMA ADA DI SINI
 // ════════════════════════════════════════════════════════════
 
-// ROOT CAUSE FIX — fetchProfileSafe
-// Fungsi ini adalah satu-satunya tempat fetch profile.
-// - Selalu ada timeout (5 detik per percobaan)
-// - Jika null → autoCreate (jangan langsung signOut)
-// - Jika error → log + return null (jangan throw)
-// - Tidak ada infinite retry — max 2 percobaan
+// OPTIMIZED — fetchProfileSafe v4
+// - Cek localStorage cache DULU → tampil instan tanpa request server
+// - Fetch server di background → update UI jika ada perubahan
+// - Auto-retry dengan backoff saat koneksi lambat
+// - Tidak ada fake timeout / setTimeout palsu
 async function fetchProfileSafe(user) {
-  const isOAuth = user.app_metadata?.provider === 'google'
-    || user.app_metadata?.providers?.includes('google');
+  const isOAuth = (user.app_metadata && user.app_metadata.provider === 'google')
+    || (user.app_metadata && user.app_metadata.providers && user.app_metadata.providers.includes('google'));
 
   console.log('[Auth] fetchProfileSafe:', user.email, '| OAuth:', isOAuth);
 
-  // PERCOBAAN 1: Baca profil yang sudah ada
-  let profile = await getProfile(user.id);
+  // ── LANGKAH 0: Cek localStorage cache (tampil instan < 10ms) ──
+  const cached = profileCacheGet(user.id);
+  if (cached) {
+    console.log('[Auth] Profile dari localStorage cache — tampil instan');
+    // Refresh dari server di background (tidak blokir UI)
+    getProfile(user.id).then(fresh => {
+      if (fresh && currentProfile && fresh.user_id === currentProfile.user_id) {
+        const changed = JSON.stringify(fresh) !== JSON.stringify(currentProfile);
+        if (changed) {
+          console.log('[Auth] Profile diperbarui dari server (background refresh)');
+          currentProfile = fresh;
+          // Update UI jika status berubah (misal: pending → approved)
+          if (fresh.status !== cached.status || fresh.role !== cached.role) {
+            routeProfile(fresh);
+          }
+        }
+      }
+    }).catch(() => {});
+    return cached;
+  }
+
+  // ── LANGKAH 1: Fetch dari server dengan auto-retry ──
+  console.log('[Auth] Tidak ada cache, fetch dari server...');
+  let profile = null;
+  try {
+    profile = await withRetry(
+      function() { return getProfile(user.id); },
+      { maxAttempts: 3, baseDelay: 400, label: 'fetchProfileSafe' }
+    );
+  } catch(e) {
+    console.error('[Auth] fetchProfileSafe: semua retry gagal:', e.message);
+  }
+
   if (profile) {
-    console.log('[Auth] Profil ditemukan di percobaan 1');
+    console.log('[Auth] Profil ditemukan dari server');
     return profile;
   }
 
-  // Profil belum ada → tunggu DB trigger (berlaku untuk OAuth & OTP baru)
-  console.log('[Auth] Profil belum ada, tunggu 1 detik untuk DB trigger...');
-  await new Promise(r => setTimeout(r, 1000));
+  // ── LANGKAH 2: Tunggu DB trigger lalu coba lagi ──
+  console.log('[Auth] Profil belum ada, tunggu DB trigger 800ms...');
+  await new Promise(function(r) { setTimeout(r, 800); });
 
-  // PERCOBAAN 2: Baca lagi setelah tunggu
   profile = await getProfile(user.id);
   if (profile) {
-    console.log('[Auth] Profil ditemukan di percobaan 2 (pasca trigger)');
+    console.log('[Auth] Profil ditemukan setelah tunggu DB trigger');
     return profile;
   }
 
-  // Masih tidak ada → buat otomatis
-  console.log('[Auth] Profil tidak ditemukan, buat otomatis...');
+  // ── LANGKAH 3: Buat profil otomatis ──
+  console.log('[Auth] Profil tidak ada, buat otomatis...');
   profile = await ensureProfile(user);
-
   if (profile) {
     console.log('[Auth] Profil berhasil dibuat otomatis');
     return profile;
   }
 
-  // Gagal semuanya
   console.error('[Auth] fetchProfileSafe: semua upaya gagal');
   return null;
 }
 
-// ROOT CAUSE FIX — initApp yang tidak bisa stuck
-// - Selalu ada exit path (sukses | error dengan UI)
-// - Tidak ada loop tanpa batas
-// - Setiap step di-log untuk debugging
+// OPTIMIZED — initApp v4
+// - Jika ada cache → tampilkan UI dulu, load profil di background
+// - Tidak ada blocking UI
+// - Semua loading berdasarkan response server nyata
+// - Handle offline dengan pesan yang jelas
 async function initApp(session) {
   if (!session) {
     console.log('[Auth] initApp: session null → ke login');
@@ -201,37 +235,59 @@ async function initApp(session) {
 
   console.log('[Auth] initApp: session ada untuk', session.user.email);
   currentUser = session.user;
-  showAppLoading('Memuat profil...');
 
-  // Timeout 8 detik untuk seluruh proses fetch+create profile
-  // Ini mencegah initApp hang selamanya
+  // ── CEK CACHE DULU: tampilkan UI tanpa delay ──
+  const cachedProfile = profileCacheGet(session.user.id);
+  if (cachedProfile) {
+    console.log('[Auth] initApp: pakai cache → UI tampil instan');
+    currentProfile = cachedProfile;
+    routeProfile(cachedProfile);
+    // Fetch terbaru di background — tidak blokir
+    fetchProfileSafe(session.user).catch(() => {});
+    return;
+  }
+
+  // ── TIDAK ADA CACHE: tampilkan loading screen yang real ──
+  // Periksa koneksi terlebih dahulu
+  if (!isOnline()) {
+    showLoadingError(
+      'Tidak ada koneksi internet.\nHubungkan ke WiFi atau aktifkan data seluler, lalu coba lagi.',
+      function() { location.reload(); }
+    );
+    return;
+  }
+
+  showAppLoading('Memuat profil Anda...');
+
+  // Timeout 8 detik — semua berdasarkan response server nyata
   const profilePromise = fetchProfileSafe(session.user);
-  const timeoutPromise = new Promise(resolve =>
-    setTimeout(() => { resolve('TIMEOUT'); }, 8000)
-  );
+  const timeoutPromise = new Promise(function(resolve) {
+    setTimeout(function() { resolve('TIMEOUT'); }, 8000);
+  });
 
   const result = await Promise.race([profilePromise, timeoutPromise]);
 
-  // Handle timeout
   if (result === 'TIMEOUT') {
     console.error('[Auth] initApp TIMEOUT — profile fetch melebihi 8 detik');
     showLoadingError(
-      'Koneksi lambat. Gagal memuat profil.\nSilakan periksa koneksi internet Anda.',
-      () => location.reload()
+      'Koneksi terputus, mencoba kembali...\nServer lambat merespons. Periksa koneksi internet Anda.',
+      function() {
+        showAppLoading('Menghubungkan ke server...');
+        initApp(session);
+      }
     );
     return;
   }
 
   const profile = result;
 
-  // Profile tidak ada meskipun sudah dicoba semua cara
   if (!profile) {
     console.error('[Auth] initApp: profile null setelah semua upaya');
     showLoadingError(
       'Profil tidak ditemukan.\nKemungkinan akun belum terdaftar atau ada masalah database.',
-      async () => {
+      async function() {
         showAppLoading('Mencoba ulang...');
-        await initApp(session); // Satu kali retry manual
+        await initApp(session);
       }
     );
     return;
@@ -458,11 +514,12 @@ async function initDashboard() {
 async function loadMapel() {
   const grid = q('mapel-grid'); if (!grid) return;
 
+  // Skeleton loading nyata — animasi shimmer, bukan spinner kosong
   grid.innerHTML = [...Array(6)].map(() => `
-    <div class="mapel-card skeleton-card">
-      <div class="skel" style="width:36px;height:36px;border-radius:10px;margin-bottom:14px"></div>
-      <div class="skel" style="width:75%;height:13px;margin-bottom:8px"></div>
-      <div class="skel" style="width:50%;height:10px"></div>
+    <div class="mapel-card skeleton-card" aria-label="Memuat...">
+      <div class="skeleton skeleton-icon"></div>
+      <div class="skeleton skeleton-line lg"></div>
+      <div class="skeleton skeleton-line sm"></div>
     </div>`).join('');
 
   const { data, error } = await getMapelCached();
@@ -1111,19 +1168,66 @@ document.addEventListener('DOMContentLoaded', () => {
 
   console.log('[Boot] App dimuat, menunggu auth state...');
 
-  // AUTO-LOGIN: cek session tersimpan langsung tanpa tunggu event
-  // Ini fix untuk kasus reload halaman di mana INITIAL_SESSION datang lambat
+  // ── DETEKSI KONEKSI — tampilkan banner offline/online ──
+  function updateConnectionBanner(online) {
+    let banner = document.getElementById('conn-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'conn-banner';
+      banner.style.cssText = [
+        'position:fixed;top:0;left:0;right:0;z-index:9999',
+        'padding:8px 16px;font-size:13px;font-weight:600',
+        'text-align:center;transition:transform .3s ease,opacity .3s ease',
+        'transform:translateY(-100%);opacity:0'
+      ].join(';');
+      document.body.appendChild(banner);
+    }
+    if (online) {
+      banner.textContent = '✅ Koneksi pulih — memuat ulang data...';
+      banner.style.background = '#16a34a';
+      banner.style.color = '#fff';
+      banner.style.transform = 'translateY(0)';
+      banner.style.opacity = '1';
+      setTimeout(() => {
+        banner.style.transform = 'translateY(-100%)';
+        banner.style.opacity = '0';
+      }, 3000);
+    } else {
+      banner.textContent = '📡 Tidak ada koneksi internet — mode offline';
+      banner.style.background = '#dc2626';
+      banner.style.color = '#fff';
+      banner.style.transform = 'translateY(0)';
+      banner.style.opacity = '1';
+    }
+  }
+
+  // Daftarkan listener koneksi dari supabase.js
+  onConnectionChange(function(online) {
+    updateConnectionBanner(online);
+    if (online && currentUser && !currentProfile) {
+      // Reconnect: coba muat profil lagi
+      console.log('[Net] Kembali online, mencoba muat ulang profil...');
+      showAppLoading('Menghubungkan ke server...');
+      sb.auth.getSession().then(function({ data: { session } }) {
+        if (session) initApp(session);
+        else { hideAppLoading(); showPage('page-login'); }
+      });
+    }
+  });
+
+  // Jika sudah offline saat load
+  if (!isOnline()) updateConnectionBanner(false);
+
+  // ── AUTO-LOGIN: cek session tersimpan langsung ──
   sb.auth.getSession().then(({ data: { session } }) => {
     if (session && !currentProfile && !isAuthBusy()) {
       console.log('[Boot] getSession() menemukan sesi aktif — inisialisasi langsung');
       clearTimeout(safetyTimer);
-      showAppLoading('Memuat profil...');
       initApp(session);
     }
   });
 
   // Safety timeout 10 detik — jika onAuthStateChange tidak pernah terpicu
-  // (ini terjadi jika Supabase JS gagal load atau CDN error)
   const safetyTimer = setTimeout(() => {
     console.warn('[Boot] Safety timeout 10 dtk — onAuthStateChange tidak terpicu');
     hideAppLoading();
@@ -1133,14 +1237,11 @@ document.addEventListener('DOMContentLoaded', () => {
   sb.auth.onAuthStateChange(async (event, session) => {
     console.log('[Auth] onAuthStateChange:', event, '| session:', session ? 'ada' : 'null');
 
-    // ⚠️  KRITIS: Jika OTP verify sedang berjalan, SKIP
-    // Tanpa ini: dua initApp() berjalan bersamaan = race condition = stuck
     if (isAuthBusy()) {
       console.log('[Auth] Busy (OTP verify) — skip onAuthStateChange');
       return;
     }
 
-    // Safety timer dibersihkan saat event pertama tiba
     clearTimeout(safetyTimer);
 
     if (event === 'SIGNED_OUT' || !session) {
@@ -1154,13 +1255,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-      // TOKEN_REFRESHED = session diperbarui otomatis, tidak perlu re-init
       if (event === 'TOKEN_REFRESHED' && currentProfile) {
         console.log('[Auth] TOKEN_REFRESHED — sudah login, skip init');
         return;
       }
       console.log('[Auth]', event, '— mulai initApp');
-      showAppLoading('Memuat profil...');
       await initApp(session);
     }
   });

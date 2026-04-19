@@ -212,6 +212,48 @@ input.opt-input:focus, textarea.q-essay-input:focus { border-color:var(--blue); 
 .mapel-dot { width:5px; height:5px; border-radius:50%; background:currentColor; flex-shrink:0; }
 .mapel-status.avail .mapel-dot { animation:pulse 2s ease infinite; }
 .skeleton-card { cursor:default !important; }
+
+/* ── SKELETON LOADING — animasi shimmer nyata ── */
+@keyframes skeleton-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg,
+    rgba(255,255,255,.04) 25%,
+    rgba(255,255,255,.10) 50%,
+    rgba(255,255,255,.04) 75%
+  );
+  background-size: 800px 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: 8px;
+  display: block;
+}
+.skeleton-card {
+  pointer-events: none;
+  background: var(--card) !important;
+  border: 1px solid rgba(255,255,255,.06) !important;
+  box-shadow: none !important;
+}
+.skeleton-line {
+  height: 14px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+}
+.skeleton-line.sm  { height: 10px; width: 60%; }
+.skeleton-line.lg  { height: 18px; width: 80%; }
+.skeleton-icon {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+/* ── CONNECTION BANNER ── */
+#conn-banner {
+  font-family: inherit;
+  letter-spacing: .3px;
+  pointer-events: none;
+}
 .empty-full { grid-column:1/-1; text-align:center; padding:48px 20px; color:var(--dim); }
 .empty-full .e-icon { font-size:36px; opacity:.35; margin-bottom:12px; display:block; }
 .empty-full p { font-size:13px; }
